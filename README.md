@@ -27,7 +27,9 @@ git clone https://github.com/Tasksmatic-Pty-Ltd/fms-assistant.git fms-assistant
 cd fms-assistant; .\install.ps1
 ```
 
-安装脚本会：检查 Node ≥ 22 → 锁版本安装 `@deepseek-ai/dsh@0.1.1-rc.2` → 拷贝 profile + 插件 → 交互填写 `.env`（`FMS_MCP_TOKEN` 员工自己的 token、`FMS_OWNER_USERNAME` 员工用户名、`FMS_MCP_URL`/`FMS_ORIGIN` 指向中央 FMS）→ 启动并自检登录门。
+安装脚本会：检查 Node ≥ 22 → 锁版本安装 `@deepseek-ai/dsh@0.1.1-rc.2` → 拷贝 profile + 插件 → 交互填写 `.env`（`FMS_MCP_TOKEN` 员工自己的 token、`FMS_OWNER_USERNAME` 员工 FMS 用户名、`FMS_MCP_URL`/`FMS_ORIGIN` 指向中央 FMS）→ 启动并自检登录门。
+
+> ⚠️ **`FMS_OWNER_USERNAME` 填的是 FMS 用户表的 `username` 字段，不是邮箱**（员工登录用邮箱，但身份门比对的是 username，如 `admin2` / `whops_demo`）。
 
 ## 启动 / 停止 / 查看服务
 

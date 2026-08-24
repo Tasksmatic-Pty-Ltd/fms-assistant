@@ -1,6 +1,6 @@
 # local install state — never commit
 .env
 .env.*
-!.env.example
+!deploy/.env.example
 node_modules/
 *.log
