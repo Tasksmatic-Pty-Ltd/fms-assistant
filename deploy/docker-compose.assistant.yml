@@ -1,0 +1,58 @@
+# fms-assistant — deploy one assistant per employee (or one shared container
+# using a service account), TWO independently-guarded services from one image.
+#
+#   cp .env.example .env        # fill in the employee's MCP token
+#   docker compose -f docker-compose.assistant.yml up -d --build
+#
+# Reliability ("不掉线"):
+#   - harness and auth-proxy are SEPARATE services: one crashing restarts only
+#     itself (restart: unless-stopped), never the pair;
+#   - healthchecks flip a dead process to unhealthy and compose/ops can act;
+#   - DSH_HOME sessions live on a volume — containers can be rebuilt freely;
+#   - the mcp-client reconnects to Rails /mcp automatically (built-in backoff);
+#   - upgrade = build new image, start next to the old one, flip the proxy,
+#     stop the old (rolling).
+services:
+  harness:
+    image: fms-assistant:local
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment:
+      FMS_MCP_URL: ${FMS_MCP_URL:?set in .env}
+      FMS_MCP_TOKEN: ${FMS_MCP_TOKEN:?set in .env}
+      FMS_WORKSPACE_DIR: ${FMS_WORKSPACE_DIR:-/srv/fms-assistant/workspace}
+      FMS_WORKSPACE_TITLE: ${FMS_WORKSPACE_TITLE:-公司工作区}
+      FMS_TRUSTED_HOST: ${FMS_TRUSTED_HOST:-127.0.0.1:3082}
+    volumes:
+      - assistant-data:/app/harness/sessions      # keep sessions across rebuilds
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3080/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  auth-proxy:
+    image: fms-assistant:local
+    command: ["node", "/app/deploy/auth-proxy.js"]
+    environment:
+      PORT: "3082"
+      TARGET: http://harness:3080
+      FMS_ORIGIN: ${FMS_ORIGIN:?set in .env}      # Rails origin the proxy validates against
+      FMS_OWNER_USERNAME: ${FMS_OWNER_USERNAME:?set in .env}  # the ONE employee this instance serves
+    depends_on:
+      - harness
+    ports:
+      - "${ASSISTANT_PORT:-3082}:3082"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3082/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  assistant-data:

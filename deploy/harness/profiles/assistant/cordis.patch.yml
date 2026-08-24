@@ -1,0 +1,67 @@
+# fms-assistant harness profile patch (deployment template).
+# Container layout: $DSH_HOME = /app/harness; the MCP endpoint and credentials
+# come from the container env.
+#
+#   1. mcp-fms        — streamable-http → the Rails MCP endpoint (POST /mcp),
+#                       Bearer = the employee's own MCP access token. The ONLY
+#                       data path; tools are filtered by that employee's
+#                       Ability server-side and are read-only.
+#   2. agent-presets  — roster locked to `fms-employee` (no shell, no fs, no
+#                       subagents); shipped presets are hidden from the roster
+#                       and the picker.
+#   3. sandbox-policy — hard-pinned read-only (defense in depth).
+#   4. custom-ui      — CITO brand slots (sidebar/hero logo + name), package
+#                       copied into /app/node_modules by the Dockerfile.
+#   5. workspace-pin  — ONE fixed workspace (FMS_WORKSPACE_DIR). The auto
+#                       directory-picker row is disabled and a host-only browse
+#                       picker row provides the `directoryPicker` service the
+#                       api-proxy requires; with no client picker occupant the
+#                       "Add workspace…" affordance disappears entirely.
+
+- insert:
+    - id: mcp-fms
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: fms
+        transport: streamable-http
+        url: !!js process.env.FMS_MCP_URL
+        headers:
+          Authorization: !!js '`Bearer ${process.env.FMS_MCP_TOKEN}`'
+
+    - id: custom-ui
+      name: 'fms-assistant-custom-ui'
+
+    - id: workspace-pin
+      name: 'fms-workspace-pin'
+
+    - id: doc-attach
+      name: 'fms-doc-attach'
+
+    # Host-side directory-picker service (apiproxy requires `directoryPicker`)
+    # WITHOUT the auto row's dynamic client picker mount: with no client
+    # occupant on the directoryFlow holes, "Add workspace…" disappears.
+    - id: directory-picker-host
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+
+- id: directory-picker
+  disabled: true
+
+# The official DeepSeek brand plugin occupies the SAME single slots as
+# fms-assistant-custom-ui at the same priority — disable it so our CITO brand
+# is the only occupant.
+- id: ui-brand-official
+  disabled: true
+
+- id: agent-presets
+  config:
+    default: fms-employee
+    # NOTE: app-boot FORCES config.roots to the shipped root at boot, so a
+    # roots override here is silently dropped. The roster always adds the
+    # derived user root $DSH_HOME/.agent-presets (includeUserRoot defaults
+    # true) — that is where fms-employee lives. Keep includeUserRoot true.
+    includeUserRoot: true
+
+- id: sandbox-policy
+  config:
+    mode: read-only
+    workspaceRoot: /app

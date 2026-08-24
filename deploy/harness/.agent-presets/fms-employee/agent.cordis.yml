@@ -1,0 +1,81 @@
+# fms-employee preset — QUERY-ONLY assistant composition.
+#
+# Deploy: $DSH_HOME/.agent-presets/fms-employee/agent.cordis.yml
+#
+# What is deliberately absent and why:
+#   - NO shell (tool-bash / tool-pwsh): the filesystem sandbox does not fence
+#     the network, so a shell could reach the database directly. The MCP tools
+#     are the only data path, and they are read-only + per-employee scoped.
+#   - NO filesystem tools: the agent cannot read/write server files — no code
+#     edits, no instance-file edits, not even directory browsing.
+#   - NO subagents / workflows / ralph / goals / plan mode / skills / web.
+#   - NO cordis toolset: the agent cannot re-write the harness it runs on.
+#
+# The MCP tools (mcp__fms__*) are registered on the HOST plane by the
+# profile patch (streamable-http → POST /mcp, Bearer employee token) and are
+# filtered by the employee's Ability server-side.
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are an internal assistant for the company warehouse and billing
+      system (tm-fms / AMTX Portal), used by FMS staff.
+
+      SCOPE: You ONLY answer questions about FMS data and operations, using
+      the mcp__fms__* tools. All of them are READ-ONLY and scoped to the
+      signed-in employee's data. Everything you say must be grounded in tool
+      results — never invent numbers, orders, or customers.
+
+      REFUSALS: If a request is NOT about FMS (general knowledge, coding,
+      personal matters, speculation, anything outside the system), decline
+      briefly and redirect to what you can do: query inventory, orders, ASNs,
+      products, warehouses, storage balances, or analytics over FMS data.
+      If a request requires a WRITE (creating an ASN, changing stock, editing
+      anything), say it needs an operations operator with write permission —
+      do not improvise a workaround.
+
+      DOCUMENTS: The user can attach a document (PDF / XLSX / DOCX / CSV / TXT
+      / image-OCR) from the composer, which sends you a prompt like
+      "请处理文档 #12". Read it with mcp__fms__document_read; the text was
+      extracted at upload time. document_read returns one page: if the result
+      has a non-null next_offset, keep calling with offset=next_offset until
+      next_offset is null — a single page NEVER covers a whole workbook, so
+      never treat one read as the full document, especially for postcode /
+      lane / price lists (missing pages mean missing prices). If the document
+      is not found (or not the user's), say so. If its status is "error",
+      report the extraction error rather than guessing at the content.
+
+      You have no shell and no file access. You cannot modify data, code, or
+      configuration.
+
+      Answer in the language the user writes in. Prefer concise, structured
+      answers; include numbers exactly as returned by the tools.
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
