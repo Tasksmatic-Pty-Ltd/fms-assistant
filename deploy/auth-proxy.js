@@ -20,6 +20,7 @@
 //   TARGET        the harness web URL (default http://127.0.0.1:3081)
 //   FMS_ORIGIN    the Rails app origin (default http://127.0.0.1:3000)
 import http from 'node:http';
+import https from 'node:https';
 import zlib from 'node:zlib';
 
 const PORT = Number(process.env.PORT || 3082);
@@ -28,6 +29,13 @@ const FMS_ORIGIN = process.env.FMS_ORIGIN || 'http://127.0.0.1:3000';
 
 const target = new URL(TARGET);
 const fms = new URL(FMS_ORIGIN);
+
+// The proxy's own listener is HTTP (local), but the backends (FMS_ORIGIN,
+// TARGET) may be HTTPS — pick node:http or node:https per URL. Without this,
+// an https FMS_ORIGIN dies with ERR_INVALID_PROTOCOL on the first check.
+function requestFor(url) {
+  return url.protocol === 'https:' ? https : http;
+}
 
 // Paths proxied to Rails WITHOUT a session check — the login flow itself.
 function isPublicFmsPath(pathname) {
@@ -53,7 +61,7 @@ const OWNER_USERNAME = process.env.FMS_OWNER_USERNAME?.trim() || undefined;
 // instance declares an owner) the signed-in user IS that owner.
 function checkSession(cookieHeader) {
   return new Promise((resolve) => {
-    const req = http.request(
+    const req = requestFor(fms).request(
       `${FMS_ORIGIN}/assistant/session_status`,
       { method: 'GET', headers: { Cookie: cookieHeader || '' } },
       (res) => {
@@ -115,7 +123,7 @@ function proxyTo(backend, req, res, pathname) {
     // origin so both checks pass, while the browser itself stays on ours.
     headers.origin = backendOrigin(backend);
   }
-  const proxy = http.request({
+  const proxy = requestFor(backend).request({
     host: backend.hostname,
     port: backend.port || (backend.protocol === 'https:' ? 443 : 80),
     path: pathname,
@@ -214,9 +222,9 @@ server.on('upgrade', async (req, socket, head) => {
     socket.destroy();
     return;
   }
-  const proxy = http.request({
+  const proxy = requestFor(target).request({
     host: target.hostname,
-    port: target.port || 80,
+    port: target.port || (target.protocol === 'https:' ? 443 : 80),
     path: req.url,
     method: 'GET',
     headers: { ...req.headers, host: target.host, ...(req.headers.origin ? { origin: backendOrigin(target) } : {}) },

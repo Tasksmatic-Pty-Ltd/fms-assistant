@@ -17,15 +17,18 @@ $BIND_HOST    = if ($env:HOST)         { $env:HOST }         else { "127.0.0.1" 
 
 function Say([string]$m) { Write-Host "==> $m" -ForegroundColor Cyan }
 
-# 1. Node >= 22
+# 1. Node: must be >= 22.18 - dsh's plugin loader imports
+#    node:module.stripTypeScriptTypes, which only exists from 22.18.0.
+#    Major 23.0.0 (Oct 2024) is TOO OLD despite being major 23, so probe the
+#    export instead of checking the major/minor.
 $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) {
-    Write-Host "[ERROR] Node.js >= 22 is required: https://nodejs.org/" -ForegroundColor Red
+    Write-Host "[ERROR] Node.js is required (>= 22.18): https://nodejs.org/" -ForegroundColor Red
     exit 1
 }
-$nodeMajor = [int](node -p "process.versions.node.split('.')[0]")
-if ($nodeMajor -lt 22) {
-    Write-Host "[ERROR] Node $(node -v) is too old (need >= 22)" -ForegroundColor Red
+$hasTsStrip = (node -p "typeof require('node:module').stripTypeScriptTypes" 2>$null).Trim()
+if ($hasTsStrip -ne "function") {
+    Write-Host "[ERROR] Node $(node -v) is too old for dsh - need >= 22.18. Install the latest Node 22 LTS or 24: https://nodejs.org/ (or: winget install OpenJS.NodeJS.LTS)" -ForegroundColor Red
     exit 1
 }
 Say "Node $(node -v)"
@@ -86,6 +89,16 @@ TARGET=http://127.0.0.1:$HARNESS_PORT
 $envMap = @{}
 Get-Content $ENV_FILE | ForEach-Object {
     if ($_ -match '^([A-Z_]+)=(.*)$') { $envMap[$matches[1]] = $matches[2] }
+}
+
+# 4.5. Ports free? A leftover harness/proxy from an earlier run would make the
+#     new one die with EADDRINUSE and the self-check fail with HTTP 0.
+foreach ($p in @($HARNESS_PORT, $PROXY_PORT)) {
+    $inUse = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
+    if ($inUse) {
+        Write-Host "[ERROR] port $p is already in use by PID $($inUse.OwningProcess) - stop it first (netstat -ano | findstr :$p) and re-run" -ForegroundColor Red
+        exit 1
+    }
 }
 
 # 5. Start harness (:HARNESS_PORT) + proxy (:PROXY_PORT) in the background.
