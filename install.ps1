@@ -33,9 +33,15 @@ if ($hasTsStrip -ne "function") {
 }
 Say "Node $(node -v)"
 
-# 2. Install the pinned dsh version
+# 2. Install the pinned dsh version. npm 11.6+/12 blocks install scripts by
+#    default (allow-scripts); dsh needs the native-module prep scripts
+#    (dsh-subprocess-local spawn helper, node-pty, koffi) or the harness
+#    cannot start. Fall back to a plain install on older npm that lacks the
+#    flag.
 Say "Installing @deepseek-ai/dsh@$DSH_VERSION ..."
-npm install -g "@deepseek-ai/dsh@$DSH_VERSION"
+$allowScripts = "@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs"
+npm install -g "@deepseek-ai/dsh@$DSH_VERSION" "--allow-scripts=$allowScripts"
+if ($LASTEXITCODE -ne 0) { npm install -g "@deepseek-ai/dsh@$DSH_VERSION" }
 if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] npm install failed" -ForegroundColor Red; exit 1 }
 
 # 3. Copy the deploy package
