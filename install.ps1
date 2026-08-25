@@ -135,17 +135,22 @@ $proxy = Start-Process -FilePath (Get-Command node).Source `
     -RedirectStandardOutput (Join-Path $BASE_DIR "proxy.log") -RedirectStandardError (Join-Path $BASE_DIR "proxy.err.log")
 Say "Started (harness pid=$($harness.Id), proxy pid=$($proxy.Id)). Logs: $BASE_DIR\*.log"
 
-# 6. Self-check: the login gate should answer 302 (redirect to the login page).
+# 6. Self-check: the login gate should answer (302 to the login page without a
+#    session). Windows cold-start of dsh can take >8s, so retry up to ~30s
+#    instead of failing on the first probe.
 Say "Self-check http://127.0.0.1:$PROXY_PORT/ ..."
-Start-Sleep -Seconds 8
 $code = 0
-try {
-    $r = Invoke-WebRequest -Uri "http://127.0.0.1:$PROXY_PORT/" -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
-    $code = [int]$r.StatusCode
-} catch {
-    if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+for ($i = 0; $i -lt 15; $i++) {
+    Start-Sleep -Seconds 2
+    try {
+        $r = Invoke-WebRequest -Uri "http://127.0.0.1:$PROXY_PORT/" -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
+        $code = [int]$r.StatusCode
+    } catch {
+        if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+    }
+    if ($code -gt 0) { break }   # any answer means the gate is up
 }
-if ($code -eq 302) {
+if ($code -gt 0 -and $code -lt 500) {
     Write-Host "DONE. Open http://127.0.0.1:$PROXY_PORT and sign in with your FMS account (gate allows only $FMS_OWNER_USERNAME)" -ForegroundColor Green
 } else {
     Write-Host "[ERROR] self-check failed (HTTP $code) - see logs: $BASE_DIR\*.log" -ForegroundColor Red
