@@ -138,8 +138,22 @@ function proxyTo(backend, req, res, pathname) {
       pRes.on('end', () => {
         const headers = { ...pRes.headers };
         delete headers['content-length']; // body length changes after rewrite
+        let body = Buffer.concat(chunks);
+        // The browser asks for compression (Accept-Encoding), so Rails may
+        // send the login HTML gzip/deflate/br — the rewrite must decompress
+        // BEFORE touching the body, or the utf8 decode mangles it and the
+        // browser's gunzip fails: a completely blank login page.
+        const enc = String(pRes.headers['content-encoding'] || '').toLowerCase().trim();
+        try {
+          if (enc === 'gzip') body = zlib.gunzipSync(body);
+          else if (enc === 'deflate') body = zlib.inflateSync(body);
+          else if (enc === 'br') body = zlib.brotliDecompressSync(body);
+        } catch (e) {
+          console.error('[auth-proxy] HTML decompress failed:', e.message);
+        }
+        delete headers['content-encoding']; // we send the plain body below
         res.writeHead(pRes.statusCode || 502, headers);
-        res.end(rewriteFmsAssets(Buffer.concat(chunks).toString('utf8')));
+        res.end(rewriteFmsAssets(body.toString('utf8')));
       });
       pRes.on('error', () => res.end());
       return;
