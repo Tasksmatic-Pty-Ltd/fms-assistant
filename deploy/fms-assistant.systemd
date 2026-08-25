@@ -27,7 +27,7 @@ User=deploy
 Environment=DSH_HOME=/srv/fms-assistant/harness
 Environment=DSH_PERMISSION_MODE=read-only
 EnvironmentFile=/srv/fms-assistant/.env
-ExecStart=/usr/bin/npx dsh --profile assistant --port 3080
+ExecStart=/usr/bin/npx dsh --profile assistant --port 3081
 WorkingDirectory=/srv/fms-assistant
 Restart=always
 RestartSec=3
@@ -46,7 +46,7 @@ Wants=network-online.target
 Type=simple
 User=deploy
 Environment=PORT=3082
-Environment=TARGET=http://127.0.0.1:3080
+Environment=TARGET=http://127.0.0.1:3081
 EnvironmentFile=/srv/fms-assistant/.env
 ExecStart=/usr/bin/node /srv/fms-assistant/deploy/auth-proxy.js
 WorkingDirectory=/srv/fms-assistant

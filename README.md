@@ -20,11 +20,16 @@ git clone https://github.com/Tasksmatic-Pty-Ltd/fms-assistant.git fms-assistant
 cd fms-assistant && ./install.sh
 ```
 
-Windows（PowerShell）：
+Windows（PowerShell，需要 **Node ≥ 22.18**——dsh 的插件加载器依赖 `node:module.stripTypeScriptTypes`，老版本 23.0.0 也不行）：
 
 ```powershell
+# 1) 装 Node（已装且 ≥22.18 可跳过；装完重开 PowerShell）
+winget install OpenJS.NodeJS.LTS
+
+# 2) 克隆并安装
 git clone https://github.com/Tasksmatic-Pty-Ltd/fms-assistant.git fms-assistant
-cd fms-assistant; .\install.ps1
+cd fms-assistant
+.\install.cmd        # 包装器，自动绕过执行策略；或 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 安装脚本会：检查 Node ≥ 22 → 锁版本安装 `@deepseek-ai/dsh@0.1.1-rc.2` → 拷贝 profile + 插件 → 交互填写 `.env`（`FMS_MCP_TOKEN` 员工自己的 token、`FMS_OWNER_USERNAME` 员工 FMS 用户名、`FMS_MCP_URL`/`FMS_ORIGIN` 指向中央 FMS）→ 启动并自检登录门。
@@ -33,7 +38,9 @@ cd fms-assistant; .\install.ps1
 
 ## 启动 / 停止 / 查看服务
 
-安装完成后服务由两个进程组成：**harness**（:3080，DSH 本体）和 **auth-proxy**（:3082，登录门代理）。浏览器访问 **http://localhost:3082**，用 FMS 账号登录即可（身份门只允许 `FMS_OWNER_USERNAME` 对应账号）。
+安装完成后服务由两个进程组成：**harness**（:3081，DSH 本体）和 **auth-proxy**（:3082，登录门代理）。浏览器访问 **http://localhost:3082**，用 FMS 账号登录即可（身份门只允许 `FMS_OWNER_USERNAME` 对应账号）。
+
+> ⚠️ **harness 默认用 3081 而不是 3080**：3080 是 DeepSeek Harness web UI 自身的端口（如果你本机同时跑着 dsh 的图形界面，3080 被它占着）。想改端口：设环境变量 `HARNESS_PORT` / `PROXY_PORT` 后再跑安装脚本。
 
 ### Linux / macOS（systemd --user，install.sh 默认方式）
 
@@ -64,9 +71,9 @@ journalctl --user -u fms-assistant-proxy -f    # 代理日志
 # 启动（install.sh 已做；手动启动同样这两条）
 nohup env DSH_HOME="$HOME/.fms-assistant/harness" DSH_PERMISSION_MODE=read-only \
   FMS_MCP_TOKEN="$FMS_MCP_TOKEN" FMS_WORKSPACE_DIR="$FMS_WORKSPACE_DIR" \
-  dsh --profile assistant --port 3080 --trusted-host 127.0.0.1:3082 \
+  dsh --profile assistant --port 3081 --trusted-host 127.0.0.1:3082 \
   > "$HOME/.fms-assistant/harness.log" 2>&1 &
-nohup env PORT=3082 TARGET="http://127.0.0.1:3080" \
+nohup env PORT=3082 TARGET="http://127.0.0.1:3081" \
   FMS_ORIGIN="$FMS_ORIGIN" FMS_OWNER_USERNAME="$FMS_OWNER_USERNAME" HOST=127.0.0.1 \
   node "$HOME/.fms-assistant/deploy/auth-proxy.js" > "$HOME/.fms-assistant/proxy.log" 2>&1 &
 

@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 $DSH_VERSION = "0.1.1-rc.2"
 $BASE_DIR = Join-Path $HOME ".fms-assistant"
-$HARNESS_PORT = if ($env:HARNESS_PORT) { $env:HARNESS_PORT } else { "3080" }
+$HARNESS_PORT = if ($env:HARNESS_PORT) { $env:HARNESS_PORT } else { "3081" }
 $PROXY_PORT   = if ($env:PROXY_PORT)   { $env:PROXY_PORT }   else { "3082" }
 $BIND_HOST    = if ($env:HOST)         { $env:HOST }         else { "127.0.0.1" }
 
