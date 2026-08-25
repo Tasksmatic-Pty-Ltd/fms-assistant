@@ -107,6 +107,13 @@ docker compose pull && docker compose up -d
 
 ## 2. Rails 侧准备（一次性，每台部署做一次）
 
+> **一条命令跑完本节的 2.1–2.5**（在 FMS 服务器 tm-fms 目录里执行本仓库的 `deploy/provision.sh`）：
+> ```bash
+> cd /path/to/tm-fms
+> curl -fsSL <本仓库>/deploy/provision.sh -o /tmp/provision.sh && bash /tmp/provision.sh
+> ```
+> 下面逐条说明它做了什么，以及出问题时怎么修。
+
 ```bash
 cd /path/to/tm-fms
 
