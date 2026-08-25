@@ -52,6 +52,13 @@ if (-not (Test-Path $ENV_FILE)) {
     $FMS_MCP_TOKEN      = Read-Host "  FMS_MCP_TOKEN       (employee's own MCP token, mcp_xxx)"
     $FMS_OWNER_USERNAME = Read-Host "  FMS_OWNER_USERNAME  (employee's FMS username - NOT the email)"
     $FMS_ORIGIN         = Read-Host "  FMS_ORIGIN          (FMS login origin, e.g. https://fms.example.com)"
+    $FMS_MCP_URL        = $FMS_MCP_URL.Trim().TrimEnd('/')
+    $FMS_MCP_TOKEN      = $FMS_MCP_TOKEN.Trim()
+    $FMS_OWNER_USERNAME = $FMS_OWNER_USERNAME.Trim()
+    $FMS_ORIGIN         = $FMS_ORIGIN.Trim().TrimEnd('/')
+    # The FMS MCP endpoint is the fixed Rails route POST /mcp - append it when
+    # the user typed just the origin, so the instance connects on first try.
+    if (-not $FMS_MCP_URL.EndsWith("/mcp")) { $FMS_MCP_URL = "$FMS_MCP_URL/mcp" }
     if (-not ($FMS_MCP_URL -and $FMS_MCP_TOKEN -and $FMS_OWNER_USERNAME -and $FMS_ORIGIN)) {
         Write-Host "[ERROR] All four are required (or edit $ENV_FILE and re-run)" -ForegroundColor Red
         exit 1
@@ -89,8 +96,12 @@ $env:DSH_PERMISSION_MODE = "read-only"
 $env:FMS_MCP_TOKEN = $envMap["FMS_MCP_TOKEN"]
 $env:FMS_WORKSPACE_DIR = $envMap["FMS_WORKSPACE_DIR"]
 $env:FMS_WORKSPACE_TITLE = $envMap["FMS_WORKSPACE_TITLE"]
-$harness = Start-Process -FilePath (Get-Command dsh).Source `
-    -ArgumentList @("--profile", "assistant", "--port", $HARNESS_PORT, "--trusted-host", "127.0.0.1:$PROXY_PORT") `
+# On Windows, `npm install -g` installs dsh as a .cmd shim, and Start-Process
+# cannot execute a .cmd directly ("%1 is not a valid Win32 application") - run
+# it through cmd.exe /c instead.
+$dshCmd = "dsh --profile assistant --port $HARNESS_PORT --trusted-host 127.0.0.1:$PROXY_PORT"
+$harness = Start-Process -FilePath $env:ComSpec `
+    -ArgumentList @("/c", $dshCmd) `
     -WorkingDirectory $BASE_DIR -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput (Join-Path $BASE_DIR "harness.log") -RedirectStandardError (Join-Path $BASE_DIR "harness.err.log")
 
