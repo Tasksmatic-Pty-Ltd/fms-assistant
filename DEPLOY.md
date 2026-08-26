@@ -138,7 +138,7 @@ MCP_READONLY_PASSWORD=<强密码> bin/rails mcp:readonly_password
 #   MCP_READONLY_DB_USER=mcp_readonly
 #   MCP_READONLY_DB_PASSWORD=<上一步的强密码>
 
-# 2.5 打开助手开关（config/assistant.yml，提交进仓库的是 false）
+# 2.5 助手开关（config/assistant.yml，提交进仓库的是 true）
 #   assistant:
 #     enabled: true
 ```
