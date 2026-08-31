@@ -129,8 +129,12 @@ $env:TARGET = "http://127.0.0.1:$HARNESS_PORT"
 $env:FMS_ORIGIN = $envMap["FMS_ORIGIN"]
 $env:FMS_OWNER_USERNAME = $envMap["FMS_OWNER_USERNAME"]
 $env:HOST = $BIND_HOST
+# Start-Process -ArgumentList does NOT auto-quote elements, so a Windows
+# username with a space (e.g. "AMT-X OPS") would split the script path and
+# node would exit instantly with no log. Quote the path explicitly.
+$proxyScript = Join-Path $BASE_DIR "deploy\auth-proxy.js"
 $proxy = Start-Process -FilePath (Get-Command node).Source `
-    -ArgumentList @((Join-Path $BASE_DIR "deploy\auth-proxy.js")) `
+    -ArgumentList ('"' + $proxyScript + '"') `
     -WorkingDirectory $BASE_DIR -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput (Join-Path $BASE_DIR "proxy.log") -RedirectStandardError (Join-Path $BASE_DIR "proxy.err.log")
 Say "Started (harness pid=$($harness.Id), proxy pid=$($proxy.Id)). Logs: $BASE_DIR\*.log"
