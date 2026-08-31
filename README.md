@@ -36,6 +36,20 @@ cd fms-assistant
 
 > ⚠️ **`FMS_OWNER_USERNAME` 填的是 FMS 用户表的 `username` 字段，不是邮箱**（员工登录用邮箱，但身份门比对的是 username，如 `admin2` / `whops_demo`）。
 
+### 之后每天只用 start / stop（不用重装）
+
+`install.cmd` 只管**第一次**（装 Node 依赖、拷文件、配 .env）。之后日常启动/停止：
+
+```powershell
+# 启动（重启电脑后 / 停止后再用）
+.\start.cmd
+
+# 停止
+.\stop.cmd
+```
+
+Linux/macOS 对应 `./start.sh` / `./stop.sh`（install.sh 的 systemd 模式则用 `systemctl --user start|stop fms-assistant.service fms-assistant-proxy.service`）。改配置（.env）后：`.\stop.cmd` → 改 `.env` → `.\start.cmd`。
+
 ## 启动 / 停止 / 查看服务
 
 安装完成后服务由两个进程组成：**harness**（:3081，DSH 本体）和 **auth-proxy**（:3082，登录门代理）。浏览器访问 **http://localhost:3082**，用 FMS 账号登录即可（身份门只允许 `FMS_OWNER_USERNAME` 对应账号）。
