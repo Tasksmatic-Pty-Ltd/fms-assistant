@@ -17,8 +17,9 @@
                           │ ② 401 → 同源登录页（/users/sign_in 也由代理转发）
                           │ ③ 200 → 代理到 harness
                           ▼
-                   harness（dsh web，:3080，fms-employee preset：无 shell/无文件工具）
+                   harness（dsh web，:3080，fms-employee preset：无 shell/无通用文件工具）
                           │  mcp-client（streamable-http，Bearer 员工 token）
+                          │  dsh-files read_document（只读本地附件：text/PDF/DOCX/XLSX）
                           ▼
                    Rails POST /mcp（Mcp::Server）
                           │  工具按员工 Ability 过滤 + scope 校验 + RLS
@@ -27,7 +28,9 @@
 ```
 
 - **登录门**：没有 FMS 登录 = 到不了 harness；登录后凭会话 cookie 进入（单点登录）。
-- **对话范围**：preset 无任何其他工具，只能调用 `mcp__fms__*`（只读）。
+- **对话范围**：preset 无 shell / 无子代理 / 无通用文件工具；agent 只调
+  `mcp__fms__*`（只读），外加 dsh-files 的 `read_document`——只读解析对话里
+  上传的附件（本机 `.dsh-filess/`，见 §5.5）。
 - **权限**：token 绑定员工 → 其完整 Ability；越权数据被 scope/RLS 拒绝。
 
 ---
@@ -44,14 +47,21 @@
   WS 升级头 + `--trusted-host <域名>`。见 §4 的 nginx 完整示例。
   两种都不能省登录门。
 
-**三个自定义插件**（CITO 品牌 + 工作区固定 + 对话文档上传）不是独立安装的：
-- **Docker**：已打进镜像（`Dockerfile` → `COPY custom-plugins/ ./node_modules/`）。
+**三个插件**（CITO 品牌 + 工作区固定 + dsh-files）不是独立安装的：
+- **Docker**：已打进镜像（`Dockerfile` → `RUN npm install … mammoth/pdfjs-dist/read-excel-file`（dsh-files 运行时依赖）+ `COPY custom-plugins/ ./node_modules/`）。
   改插件 = 改 `custom-plugins/` 后重新 build，无单独安装步骤。
-- **systemd 裸机 / install.sh**：把 `custom-plugins/*`
-  拷进 profile 的 node_modules：`$DSH_HOME/profiles/assistant/node_modules/`
-  （loader 与 client-modules 都从 profile 目录解析插件包）。
+- **systemd 裸机 / 一键安装**：`install.sh` / `install.ps1` 先 pnpm 装 profile
+  依赖（dsh-univer-office，冻结锁文件），再在该 profile 的 node_modules 里
+  `npm install` dsh-files 的三个运行时依赖，最后把 `custom-plugins/*`
+  （含 vendored `dsh-files`）拷进 `$DSH_HOME/profiles/assistant/node_modules/`
+  （loader 与 client-modules 都从 profile 目录解析插件包）。**顺序不能反**：
+  pnpm / npm 都会裁剪多余包，先拷贝后安装会把插件删掉。
 - 换 logo：改 `fms-assistant-custom-ui/client.js` 的 `CITO_MARK`（SVG 占位）。
   换工作区名：改 `FMS_WORKSPACE_TITLE` 环境变量。
+- dsh-files 是 **vendored 第三方包**（v0.4.1，MIT）：来源、锁定原因与行为见
+  `custom-plugins/dsh-files/VENDOR.md`。它取代了已退役的 fms-doc-attach
+  （Rails 文档上传管线）；0.5.x 需要宿主 ≥ 0.1.3，本包锁宿主 0.1.1-rc.2，
+  因此锁 0.4.1——升级 dsh 锁版本时按 VENDOR.md 一起评估。
 
 **dsh-univer-office（Univer 办公插件，npm 包）是另一类**：它是 out-of-tree
 bundle，声明在 `deploy/harness/profiles/assistant/package.json` 的
@@ -284,20 +294,35 @@ server {
 
 ---
 
-## 5.5 文档上传（对话内「📎 上传文档」）
+## 5.5 文档上传（对话内附件，本地处理）
 
-员工可在对话输入框上方的「📎 上传文档」上传 **PDF / XLSX / DOCX / CSV / TXT / 图片**（单文件 ≤10MB）。流程：
+员工在对话输入框旁的「📎 上传文件 / 📁 上传文件夹」（也可拖拽、`@` 引用）
+上传附件，由 **dsh-files**（vendored，见 `custom-plugins/dsh-files/VENDOR.md`）
+处理。流程：
 
-1. 浏览器同源 `POST /api/assistant/v1/documents` → auth-proxy 校验 FMS 会话 cookie 后转发给 Rails（无需员工自持 api_key；API 客户端仍可用 Bearer/Basic）。
-2. Rails 在**上传时**提取文本入库（不保留二进制），返回 `{id, status: ready|error, char_count, error}`。
-3. 客户端自动发出「请处理文档 #<id>（<文件名>）」；agent 通过 `document.read` MCP 工具按需分页读全文（每页 ≤50k 字符，`offset`/`next_offset` 续读，`total_chars` 显示总量；入库提取上限 200 万字符——覆盖 1.5MB 价卡工作簿）。
+1. 浏览器同源 `POST /api/upload`（带会话 ID）→ auth-proxy（登录门已校验 FMS
+   会话）→ harness。文件落在该会话工作区
+   `<FMS_WORKSPACE_DIR>/.dsh-filess/<sessionId>/`，sha256 去重、文件名净化、
+   单文件 ≤10MiB（`uploadMaxBytes`）、**TTL 7 天**清扫（`uploadTtlMs`）。
+2. 上传的文件路径以附件卡片形式进入草稿，随消息发给 agent；**不做任何服务端
+   提取、文件不离开实例**（原 Rails 提取 → `document.read` MCP 管线已退役）。
+3. agent 用 `read_document` 工具本地读取：内容嗅探（不信任扩展名）识别
+   text/PDF/DOCX/XLSX，`offset`/`limit` 分页续读；XLSX 先 `list_sheets` 再按
+   `sheet` 读。扫描件 PDF（无文本层）→ 明确提示读不了；伪装文件（exe 改
+   .pdf）→ 拒绝。
 
 要点：
 
-- **图片 OCR 是部署选项**：需要服务器装 `tesseract-ocr`（Debian/Ubuntu: `apt install tesseract-ocr`）。没装时图片上传成功但 status=`error`（提示未装 tesseract）。
-- 扫描件 PDF（无文本层）会得到 status=`error` 并说明"可能是扫描件"——当前版本不做 PDF OCR。
-- 文档归上传员工所有，`document.read` 只读本人文档；越权读 → not found。
-- 依赖 auth-proxy ≥ 本提交（含 `/api/assistant/*` → Rails 路由）；旧代理会把这些请求发去 harness 导致 404。
+- **图片**：以图片附件随消息发给模型；只有模型真能看图时才描述内容，否则
+  agent 会说明读不了（没有 tesseract/OCR 环节）。
+- **归属与隔离**：文件存在**实例本机**（员工本机形态即员工自己的磁盘；服务器
+  集中形态在容器工作区）。每实例=每员工（或独立容器），天然按人隔离；不经过
+  Rails，因此**不进 `mcp_query_logs` 审计**——要留痕的敏感文件请走 FMS 流程。
+- **持久化**：文件 TTL 7 天；Docker 形态若要让工作区文件跨容器重建保留，给
+  `FMS_WORKSPACE_DIR` 挂 volume（compose 默认未挂，仅 sessions 持久）。
+- **方案 B（nginx 直连 harness）**：`/api/upload` 的 Host 检查需要认公网域名，
+  已通过 `trustedHosts: FMS_TRUSTED_HOST` 注入（profile patch）；经 auth-proxy
+  时 Host 恒为 loopback，无需该配置。
 
 ---
 
@@ -339,9 +364,10 @@ package.json、pnpm 冻结安装）。agent 可以把**任何 MCP 查询返回�
 - [ ] `SELECT * FROM mcp_query_logs` 有记录（谁、何时、查了什么，含失败）
 - [ ] Rails 侧 `SELECT count(*) FROM customers` 用应用账号验证 RLS 未弄瞎应用
 - [ ] 两个容器 healthy；`docker compose ps` 全部 running
-- [ ] 对话里点「📎 上传文档」传一个 txt/csv → 自动发出「请处理文档 #id」，agent 能复述内容
-- [ ] 传一个 15MB 文件 → 客户端提示超限，不上传
-- [ ] （可选）传图片 → 有 tesseract 则能读文字，无则 status=error 且 agent 说明原因
+- [ ] 对话里「📎 上传文件」传一个 txt/csv → 附件进草稿，agent 用 `read_document` 能复述内容
+- [ ] 传一个 PDF / XLSX → agent 能分页读全（多页/多 sheet 不断章取义）
+- [ ] 传一个 15MB 文件 → 提示超限（≤10MiB），不上传
+- [ ] （可选）传图片 → 模型能看图则描述，否则 agent 说明读不了
 - [ ] **办公文档**：问 agent「把库存结果导出成 Excel」→ 对话出现可下载的 .xlsx，打开内容与工具返回一致
 - [ ] **落盘位置**：`FMS_WORKSPACE_DIR`（员工本机 = `~/.fms-assistant/workspace`；Docker = `<安装目录>/files`）出现产出文件，Docker 重建不丢
 - [ ] 确认 agent 仍**没有** shell/子代理/web（工具清单无 `tool-bash` 等）；数据仍只走 MCP
@@ -350,11 +376,11 @@ package.json、pnpm 冻结安装）。agent 可以把**任何 MCP 查询返回�
 
 ## 7. 运维要点
 
-- **升级**：改 `Dockerfile` 里的 `@deepseek-ai/dsh` 版本 → 重新 build → 新容器起好验证 → 切 nginx → 停旧（滚动）。会话在 volume，不丢。
+- **升级**：改 `Dockerfile` 里的 `@deepseek-ai/dsh` 版本 → 重新 build → 新容器起好验证 → 切 nginx → 停旧（滚动）。会话在 volume，不丢。**升 dsh 锁版本时同时评估 vendored `dsh-files`**（见 `custom-plugins/dsh-files/VENDOR.md`：0.5.x 需要宿主 ≥ 0.1.3）。
 - **吊销员工**：员工在 FMS Settings 里 revoke token → 该实例立即 401。
-- **审计**：`mcp_query_logs` 表；建议加"异常大查询/非工作时间访问"告警。
+- **审计**：`mcp_query_logs` 表；建议加"异常大查询/非工作时间访问"告警。注意**本地附件不经 Rails、不进 mcp_query_logs**（见 §5.5）。
 - **日志**：`docker compose logs -f` / `journalctl -u fms-assistant -f`。
-- **备份**：`assistant-data` volume（会话）+ **`FMS_WORKSPACE_DIR`（产出文档）** + Rails 正常备份（含 mcp_query_logs）。
+- **备份**：`assistant-data` volume（会话）+ **`FMS_WORKSPACE_DIR`（产出文档与上传附件都在此）** + Rails 正常备份（含 mcp_query_logs）。上传文档默认 TTL 7 天自动清扫；要长期保留就为 `FMS_WORKSPACE_DIR` 挂持久 volume。
 
 ---
 
