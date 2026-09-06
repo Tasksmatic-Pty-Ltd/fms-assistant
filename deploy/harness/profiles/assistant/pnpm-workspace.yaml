@@ -1,0 +1,14 @@
+# pnpm workspace for the assistant profile's out-of-tree plugins.
+#
+# Same settings as the (proven) local `web` profile:
+#   - autoInstallPeers: false — do NOT vendor @deepseek-ai/dsh-* peer copies
+#     into this profile. The Univer bundle's peers resolve from the HOST dsh
+#     install at runtime (the loader binds the host dependency graph), exactly
+#     like the custom plugins under custom-plugins/.
+#   - nodeLinker: hoisted — flat node_modules (npm-style), so the loader and
+#     client-modules registry find packages by up-walk from the profile dir.
+packages:
+  - .
+
+nodeLinker: hoisted
+autoInstallPeers: false

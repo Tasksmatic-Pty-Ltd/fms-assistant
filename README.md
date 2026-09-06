@@ -6,6 +6,19 @@
 
 > 本仓库 = tm-fms 里 `assistant/` 目录的独立发布形态（源在 tm-fms，由同步机制保持一致）。Rails 侧的 MCP 端点 / RLS / 只读角色 / 文档提取都在 tm-fms 里，**员工机器不需要任何 Rails 代码**。
 
+## 生成办公文档（Excel / Word / PPT）
+
+部署包内置 **dsh-univer-office**（Univer 插件，`install.sh` / Docker build 自动装
+好）。agent 可以把**任何查询返回的数据**当场做成文档：说「把库存结果导出成
+Excel」→ agent 写入隔离草稿 → 导出 `.xlsx / .docx / .pptx`，成品出现在对话里
+可直接下载。
+
+- **落盘**：`FMS_WORKSPACE_DIR`——员工本机是安装目录里的 `workspace/`
+  （`~/.fms-assistant/workspace`）；服务器 Docker 形态是 `<安装目录>/files/`。
+- **不导出 PDF**（该插件只有打印路径）；要 PDF 需另接一层，暂未做。
+- 这是 `fms-employee` 唯一的写口：agent 仍**无 shell / 无通用文件工具**，
+  数据仍只走 MCP、按员工权限过滤。
+
 ## 两种部署形态（同一份代码）
 
 | 形态 | 说明 | 装法 |

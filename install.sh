@@ -29,6 +29,13 @@ npm install -g "@deepseek-ai/dsh@$DSH_VERSION"
 say "安装到 $BASE_DIR ..."
 mkdir -p "$BASE_DIR"
 cp -r deploy/harness "$BASE_DIR/"
+
+# 3b. 安装 profile 依赖（含 dsh-univer-office 办公插件）。pnpm 按锁文件
+#     冻结安装；必须在拷自定义插件之前跑——pnpm 会清掉不在依赖图里的包。
+say "安装 profile 依赖（dsh-univer-office 办公插件）..."
+command -v pnpm >/dev/null 2>&1 || npm install -g --no-audit --no-fund pnpm@11.24.0
+( cd "$BASE_DIR/harness/profiles/assistant" && pnpm install --frozen-lockfile )
+
 mkdir -p "$BASE_DIR/harness/profiles/assistant/node_modules"
 cp -r custom-plugins/* "$BASE_DIR/harness/profiles/assistant/node_modules/"
 mkdir -p "$BASE_DIR/deploy" "$BASE_DIR/workspace"

@@ -21,11 +21,18 @@ services:
     environment:
       FMS_MCP_URL: ${FMS_MCP_URL:?set in .env}
       FMS_MCP_TOKEN: ${FMS_MCP_TOKEN:?set in .env}
-      FMS_WORKSPACE_DIR: ${FMS_WORKSPACE_DIR:-/srv/fms-assistant/workspace}
+      # The ONE fixed workspace = the folder where the agent's produced office
+      # documents (Excel/Word/PPT via the Univer bundle) land. Lives inside the
+      # assistant install dir and is bind-mounted so the host sees the files
+      # and they survive rebuilds.
+      FMS_WORKSPACE_DIR: ${FMS_WORKSPACE_DIR:-/srv/fms-assistant/files}
       FMS_WORKSPACE_TITLE: ${FMS_WORKSPACE_TITLE:-公司工作区}
       FMS_TRUSTED_HOST: ${FMS_TRUSTED_HOST:-127.0.0.1:3082}
     volumes:
       - assistant-data:/app/harness/sessions      # keep sessions across rebuilds
+      # Produced documents at <assistant install>/files (host) == FMS_WORKSPACE_DIR
+      # (container). Override the host side with FMS_FILES_DIR in .env if wanted.
+      - ${FMS_FILES_DIR:-/srv/fms-assistant/files}:/srv/fms-assistant/files
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3080/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]

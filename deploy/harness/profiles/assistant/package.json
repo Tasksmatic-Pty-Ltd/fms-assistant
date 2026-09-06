@@ -1,12 +1,15 @@
 {
   "name": "dsh-profile-assistant",
   "private": true,
-  "dependencies": {},
+  "dependencies": {
+    "dsh-univer-office": "0.2.10"
+  },
   "dsh": {
     "profile": {
       "bundles": [
         "@deepseek-ai/dsh-base",
-        "@deepseek-ai/dsh-web-app"
+        "@deepseek-ai/dsh-web-app",
+        "dsh-univer-office"
       ]
     }
   }
