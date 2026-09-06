@@ -31,8 +31,10 @@
 - **同一份 bundle 既是全新安装包，也是每次更新的下载体** → 更新器逻辑最简单：
   下载 zip → 校验 → 替换程序文件 → 重启，无增量/差分包。
 - 体积估计：便携 Node ~30MB（zip 后）+ dsh 及依赖 ~100–150MB（dsh 带原生模块如
-  koffi/node-pty，主要大头）+ profile/插件 ≈ **zip 后 80–150MB 量级**（打包后实测为准）。
-  内网/公司带宽下可接受；一次安装，之后只在小版本间整包替换。
+  koffi/node-pty）+ profile/插件 + **dsh-univer-office**（最大头：Linux 干净安装实测
+  profile node_modules ≈ **339MB**，含 puppeteer-core/libsql/@univerjs-pro 等）
+  ⇒ zip 后 **150–350MB 量级**（打包后实测为准）。内网/公司带宽下可接受；一次安装，
+  之后只在小版本间整包替换。
 - 员工拿到方式（二选一，见 §10 待定项）：
   - 私有 GitHub Releases 下载页（员工有仓库只读权限即可）；
   - IT 拷一份到内网共享盘（推荐：不需要员工有 GitHub 账号）。
@@ -54,7 +56,7 @@
 ├── manifest.json           ← 新增：当前安装版本/构建信息（更新器比较用）
 ├── runtime\node\…          ← 便携 Node 22.x（zip 内原样解压）
 ├── global\node_modules\@deepseek-ai\dsh\…   ← dsh 及其依赖（打包机装好）
-├── harness\…               ← profile + 插件（同现状路径）
+├── harness\…               ← profile + 插件 + profile 依赖（dsh-univer-office，同现状路径）
 ├── deploy\auth-proxy.js    ← 同现状路径
 ├── bin\dsh.cmd             ← 构建时生成：指向 runtime\node + global\dsh 的本地启动器
 ├── workspace\              ← 永不动（dsh-files 上传文件落点）
@@ -88,6 +90,19 @@ bundle 内部结构就是上表去掉 `.env/workspace/logs/previous` 后的镜�
 **升级 dsh/dsh-files/Node 都只改这一个文件** → CI 出整包，杜绝单包升级破坏锁链
 （README 已强调 dsh 0.1.1-rc.2 ↔ dsh-files 0.4.1 配套锁定）。
 
+### 3.1 包内组件清单（已核实，按来源分类）
+
+| 组件 | 版本 | 来源 | 进 Windows bundle |
+|---|---|---|---|
+| `@deepseek-ai/dsh`（框架本体 + 依赖树） | 0.1.1-rc.2 | npm，框架自身 | ✅ `global\` |
+| `fms-assistant-custom-ui`（CITO 品牌 UI） | 0.1.0 | **仓库自研**（private） | ✅ `harness\…\node_modules` |
+| `fms-workspace-pin`（固定工作区） | 0.1.0 | **仓库自研**（private） | ✅ 同上 |
+| `dsh-files`（附件上传 + read_document） | 0.4.1 | **第三方 vendored**（taxueseek/dsh-files，MIT，commit 6b761ba） | ✅ 同上 |
+| `mammoth` / `pdfjs-dist` / `read-excel-file`（dsh-files 解析依赖，纯 JS） | 1.12.2 / 4.10.38 / 5.8.8 | 第三方 npm | ✅ 同上 |
+| `dsh-univer-office`（Sheet/Doc/Slide 办公 + 导出） | 0.2.10 | 第三方，锁在 pnpm-lock.yaml | ✅ `harness\profiles\assistant`（pnpm 冻结安装） |
+| 宿主自带 `dsh-mcp-client` / `dsh-base` / `dsh-web-app` 等 | 随 dsh | dsh 依赖树，非另装 | ✅ 随 `global\` |
+| `ui-brand-official`（官方品牌插件） | 随 dsh | dsh 依赖树 | 显式 **disabled** |
+
 ---
 
 ## 4. 构建流水线（谁产出 bundle）
@@ -105,10 +120,19 @@ bundle 内部结构就是上表去掉 `.env/workspace/logs/previous` 后的镜�
      "--allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs"
    ```
    （失败则像 install.ps1 一样回退一次无 flag 安装。）
-4. 组 profile：拷 `deploy\harness` → `stage\app\harness`；**先**在
-   `harness\profiles\assistant\node_modules` 里 `npm install --omit=dev --no-save
-   --no-package-lock mammoth@1.12.2 pdfjs-dist@4.10.38 read-excel-file@5.8.8`，
-   **再**拷 `custom-plugins\*` 进去（顺序不能反，DEPLOY.md §0.5 已注明）；
+4. 组 profile（**顺序照 install.sh §3b/§3**：pnpm/npm 都会裁剪多余包，谁先跑都会删掉
+   后拷的插件——先 pnpm → 再 npm 解析依赖 → 最后拷插件）：
+   a. 拷 `deploy\harness` → `stage\app\harness`；
+   b. **profile 依赖**：打包机先装 `pnpm@11.24.0`，再在
+      `harness\profiles\assistant` 跑 `pnpm install --frozen-lockfile` —— 按锁文件装
+      **`dsh-univer-office@0.2.10`**（唯一直接依赖，48 包依赖树）。本步已随 HEAD
+      （commit 24084a0，merge 2246a21）统一补进 `install.ps1`/`install.sh`/Dockerfile；
+      本节在 Linux 干净副本实测 office + 解析依赖 + 插件可共存于同一 node_modules
+      （nodeLinker: hoisted，见 pnpm-workspace.yaml）；
+   c. 在 `harness\profiles\assistant\node_modules` 里
+      `npm install --omit=dev --no-save --no-package-lock mammoth@1.12.2
+      pdfjs-dist@4.10.38 read-excel-file@5.8.8`（dsh-files 运行时解析依赖）；
+   d. 拷 `custom-plugins\*` 进同一 node_modules；
 5. 拷 `deploy\auth-proxy.js` → `stage\app\deploy\`；写 `manifest.json`；
 6. **生成 `bin\dsh.cmd`**：npm 生成的全局 shim 会把打包机的 node 绝对路径写死，
    必须自己生成相对路径启动器，例如：
@@ -270,3 +294,10 @@ downgrade。
    （零成本，内部试点足够）。
 6. **bundle.defaults 注入公司值**（FMS_MCP_URL / FMS_ORIGIN）需确认这俩是公司通用
    固定值，能写进包；不能则退回安装向导手填。
+7. **`dsh-univer-office` 是否进 Windows 包 —— 已定：补装**。当前 HEAD（commit
+   24084a0，merge 2246a21）已给 `install.ps1`/`install.sh`/Dockerfile 统一加上
+   `pnpm install --frozen-lockfile` 的 profile 依赖步骤（Windows 与 Linux/Docker
+   行为现已一致；本次还补了 install.ps1 里 pnpm 步骤缺失的退出码检查）。
+   Windows bundle 侧沿用 §4b 同一序列。**剩余动作**：在一台真实 Windows x64 上跑
+   `install.cmd` 验证（office 的 `univer_*` 工具对 fms-employee agent 可见、
+   harness 启动、302 自检通过）。
