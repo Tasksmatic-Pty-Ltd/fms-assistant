@@ -40,6 +40,27 @@ Get-Content $ENV_FILE | ForEach-Object {
     if ($_ -match '^([A-Z_]+)=(.*)$') { $envMap[$matches[1]] = $matches[2] }
 }
 
+# Validate the URL-shaped values BEFORE spawning anything. The auth proxy
+# exits at startup when FMS_ORIGIN / TARGET are not valid http(s) URLs (e.g.
+# an origin typed without "https://" in .env); without this check that used
+# to surface only as an opaque "self-check failed (HTTP 0)".
+foreach ($urlName in @("FMS_ORIGIN")) {
+    $urlValue = $envMap[$urlName]
+    if (-not $urlValue) {
+        Write-Host "[ERROR] .env $urlName is missing or empty - edit $ENV_FILE, or delete it and re-run install.cmd" -ForegroundColor Red
+        exit 1
+    }
+    try {
+        $u = New-Object System.Uri($urlValue, [System.UriKind]::Absolute)
+        if ($u.Scheme -ne "http" -and $u.Scheme -ne "https") { throw "unsupported scheme '$($u.Scheme)'" }
+        if (-not $u.Host) { throw "no host" }
+    } catch {
+        Write-Host "[ERROR] .env $urlName is not a valid http(s) URL: '$urlValue' ($($_.Exception.Message))" -ForegroundColor Red
+        Write-Host "        fix $ENV_FILE (line: $urlName=https://...) or delete it and re-run install.cmd" -ForegroundColor Red
+        exit 1
+    }
+}
+
 Say "Starting harness (port $HARNESS_PORT) + proxy (port $PROXY_PORT) ..."
 $env:DSH_HOME = Join-Path $BASE_DIR "harness"
 $env:DSH_PERMISSION_MODE = "read-only"
@@ -66,6 +87,23 @@ $proxy = Start-Process -FilePath (Get-Command node).Source `
     -RedirectStandardOutput (Join-Path $BASE_DIR "proxy.log") -RedirectStandardError (Join-Path $BASE_DIR "proxy.err.log")
 Say "Started (harness pid=$($harness.Id), proxy pid=$($proxy.Id)). Logs: $BASE_DIR\*.log"
 
+# Give the two processes a few seconds, then surface an early exit loudly
+# instead of letting the 30 s self-check report a bare "HTTP 0".
+Start-Sleep -Seconds 4
+foreach ($proc in @(@{ Name = "harness"; P = $harness }, @{ Name = "proxy"; P = $proxy })) {
+    if ($proc.P.HasExited) {
+        Write-Host "[ERROR] $($proc.Name) exited immediately (code $($proc.P.ExitCode))" -ForegroundColor Red
+        foreach ($f in @("$($proc.Name).err.log", "$($proc.Name).log")) {
+            $p = Join-Path $BASE_DIR $f
+            if (Test-Path $p) {
+                Write-Host "--- tail of $f ---" -ForegroundColor Yellow
+                Get-Content $p -Tail 20 | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+            }
+        }
+        exit 1
+    }
+}
+
 # Self-check: the login gate should answer (302 without a session). Retry up
 # to ~30s - Windows cold-start of dsh can take a while.
 Say "Self-check http://127.0.0.1:$PROXY_PORT/ ..."
@@ -81,8 +119,15 @@ for ($i = 0; $i -lt 15; $i++) {
     if ($code -gt 0) { break }
 }
 if ($code -gt 0 -and $code -lt 500) {
-    Write-Host "DONE. Open http://127.0.0.1:$PROXY_PORT and sign in with your FMS account (gate allows only $FMS_OWNER_USERNAME)" -ForegroundColor Green
+    Write-Host "DONE. Open http://127.0.0.1:$PROXY_PORT and sign in with your FMS account (gate allows only $($envMap["FMS_OWNER_USERNAME"]))" -ForegroundColor Green
 } else {
-    Write-Host "[ERROR] self-check failed (HTTP $code) - see logs: $BASE_DIR\*.log" -ForegroundColor Red
+    Write-Host "[ERROR] self-check failed (HTTP $code) after ~30s - the proxy on port $PROXY_PORT never answered." -ForegroundColor Red
+    foreach ($f in @("harness.err.log", "proxy.err.log", "harness.log", "proxy.log")) {
+        $p = Join-Path $BASE_DIR $f
+        if (Test-Path $p) {
+            Write-Host "--- tail of $f ---" -ForegroundColor Yellow
+            Get-Content $p -Tail 25 | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+        }
+    }
     exit 1
 }

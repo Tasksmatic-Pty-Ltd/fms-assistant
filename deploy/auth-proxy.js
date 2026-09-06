@@ -27,8 +27,25 @@ const PORT = Number(process.env.PORT || 3082);
 const TARGET = process.env.TARGET || 'http://127.0.0.1:3081';
 const FMS_ORIGIN = process.env.FMS_ORIGIN || 'http://127.0.0.1:3000';
 
-const target = new URL(TARGET);
-const fms = new URL(FMS_ORIGIN);
+// Validate the two URLs and FAIL LOUDLY at startup. A malformed FMS_ORIGIN /
+// TARGET (no scheme, stray space, empty) used to throw an opaque TypeError
+// here, killing the proxy BEFORE it binds - which surfaced downstream only as
+// the start.ps1 self-check reporting "HTTP 0" with no explanation anywhere.
+function mustBeUrl(name, raw) {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error(`unsupported protocol "${u.protocol}"`);
+    if (!u.hostname) throw new Error('no host');
+    return u;
+  } catch (e) {
+    console.error(`[auth-proxy] FATAL: ${name} is not a valid http(s) URL: "${raw}"`);
+    console.error(`[auth-proxy] FATAL: ${e.message}`);
+    console.error('[auth-proxy] fix it in the .env next to this install (e.g. FMS_ORIGIN=https://fms.example.com) and start again');
+    process.exit(1);
+  }
+}
+const target = mustBeUrl('TARGET', TARGET);
+const fms = mustBeUrl('FMS_ORIGIN', FMS_ORIGIN);
 
 // The proxy's own listener is HTTP (local), but the backends (FMS_ORIGIN,
 // TARGET) may be HTTPS — pick node:http or node:https per URL. Without this,

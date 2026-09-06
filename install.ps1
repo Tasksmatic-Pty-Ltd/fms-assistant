@@ -100,6 +100,15 @@ if (-not (Test-Path $ENV_FILE)) {
     $FMS_MCP_TOKEN      = $FMS_MCP_TOKEN.Trim()
     $FMS_OWNER_USERNAME = $FMS_OWNER_USERNAME.Trim()
     $FMS_ORIGIN         = $FMS_ORIGIN.Trim().TrimEnd('/')
+    # Require an explicit scheme: the auth proxy builds new URL(FMS_ORIGIN) at
+    # startup and throws when the value has none, which used to surface only as
+    # an opaque "self-check failed (HTTP 0)". The MCP client is equally strict.
+    function Ensure-UrlScheme([string]$s) {
+        if ($s -match '^[A-Za-z][A-Za-z0-9+.\-]*://') { return $s }
+        return "https://$s"
+    }
+    $FMS_MCP_URL = Ensure-UrlScheme $FMS_MCP_URL
+    $FMS_ORIGIN  = Ensure-UrlScheme $FMS_ORIGIN
     # The FMS MCP endpoint is the fixed Rails route POST /mcp - append it when
     # the user typed just the origin, so the instance connects on first try.
     if (-not $FMS_MCP_URL.EndsWith("/mcp")) { $FMS_MCP_URL = "$FMS_MCP_URL/mcp" }
