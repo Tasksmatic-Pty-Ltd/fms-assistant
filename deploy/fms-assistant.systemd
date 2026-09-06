@@ -6,12 +6,15 @@
 # 安装步骤：
 #   1) 装 Node 22（mise / nvm 均可）
 #   2) npm install -g @deepseek-ai/dsh@0.1.1-rc.2     # 锁版本
-#   3) 把 assistant/deploy/harness/ 放到 /srv/fms-assistant/harness
-#   4) 把 assistant/deploy/auth-proxy.js 放到 /srv/fms-assistant/deploy/
-#   5) 安装自定义插件（品牌 + 工作区固定）到 profile 的 node_modules：
-#      mkdir -p /srv/fms-assistant/harness/profiles/assistant/node_modules
-#      cp -r assistant/custom-plugins/* /srv/fms-assistant/harness/profiles/assistant/node_modules/
-#   6) 建 /srv/fms-assistant/.env（FMS_MCP_URL/FMS_MCP_TOKEN/FMS_ORIGIN/PORT/TARGET）
+#   3) 把 deploy/harness/ 放到 /srv/fms-assistant/harness
+#   4) 把 deploy/auth-proxy.js 放到 /srv/fms-assistant/deploy/
+#   5) 安装 profile 依赖（含 dsh-univer-office 办公插件，声明在 package.json，
+#      pnpm-workspace.yaml 保证不复制 @deepseek-ai peer，运行时用 host dsh）：
+#      cd /srv/fms-assistant/harness/profiles/assistant && pnpm install --frozen-lockfile
+#      再把自定义插件拷进同一 node_modules（不走 pnpm 的包）：
+#      cp -r custom-plugins/* /srv/fms-assistant/harness/profiles/assistant/node_modules/
+#   6) 建 /srv/fms-assistant/.env（FMS_MCP_URL/FMS_MCP_TOKEN/FMS_ORIGIN/PORT/TARGET；
+#      另设 FMS_WORKSPACE_DIR 指向产出文档的宿主文件夹，如 /srv/fms-assistant/files）
 #   7) 安装下面两个 unit：cp *.service /etc/systemd/system/ && systemctl daemon-reload
 #      systemctl enable --now fms-assistant fms-assistant-proxy
 

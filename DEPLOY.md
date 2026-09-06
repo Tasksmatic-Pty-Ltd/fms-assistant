@@ -44,14 +44,24 @@
   WS 升级头 + `--trusted-host <域名>`。见 §4 的 nginx 完整示例。
   两种都不能省登录门。
 
-**两个自定义插件**（CITO 品牌 + 工作区固定）不是独立安装的：
+**三个自定义插件**（CITO 品牌 + 工作区固定 + 对话文档上传）不是独立安装的：
 - **Docker**：已打进镜像（`Dockerfile` → `COPY custom-plugins/ ./node_modules/`）。
   改插件 = 改 `custom-plugins/` 后重新 build，无单独安装步骤。
-- **systemd 裸机**：把 `custom-plugins/{fms-assistant-custom-ui, fms-workspace-pin}`
+- **systemd 裸机 / install.sh**：把 `custom-plugins/*`
   拷进 profile 的 node_modules：`$DSH_HOME/profiles/assistant/node_modules/`
   （loader 与 client-modules 都从 profile 目录解析插件包）。
 - 换 logo：改 `fms-assistant-custom-ui/client.js` 的 `CITO_MARK`（SVG 占位）。
   换工作区名：改 `FMS_WORKSPACE_TITLE` 环境变量。
+
+**dsh-univer-office（Univer 办公插件，npm 包）是另一类**：它是 out-of-tree
+bundle，声明在 `deploy/harness/profiles/assistant/package.json` 的
+`dsh.profile.bundles` 里，用 pnpm 按 `pnpm-lock.yaml` 冻结安装（不是拷目录）：
+- **Docker**：`Dockerfile` 里已带 `pnpm install --frozen-lockfile`，直接 rebuild。
+- **install.sh / systemd**：`cd $DSH_HOME/profiles/assistant && pnpm install --frozen-lockfile`
+  （install.sh 已内置该步；手工部署要装 pnpm，锁文件与仓库一致）。
+- `deploy/harness/profiles/assistant/pnpm-workspace.yaml`
+  （`autoInstallPeers: false`）保证不复制 `@deepseek-ai/dsh-*` peer——插件
+  运行时用 host dsh，跟自定义插件一致。
 
 ---
 
@@ -262,6 +272,9 @@ server {
 | `FMS_ORIGIN` | 助手 .env | Rails 源（代理校验 cookie 用） |
 | `ASSISTANT_PORT` | 助手 .env | 对外端口（默认 3082） |
 | `FMS_TRUSTED_HOST` | 助手 .env | 浏览器访问助手的**公共源**（如 `127.0.0.1:3082` 或 `fms.example.com`）——harness 的 /api 信任栅栏必须认它，否则所有 RPC 403、对话打不开 |
+| `FMS_WORKSPACE_DIR` | 助手 .env | 唯一固定工作区 = **产出文档落盘目录**（Univer 办公插件把 .xlsx/.docx/.pptx 与 .univer 源写在这里）。必须可写、放持久位置。install.sh 形态默认 `$FMS_ASSISTANT_HOME/workspace`（就在安装目录里）；Docker 形态默认 `/srv/fms-assistant/files` |
+| `FMS_WORKSPACE_TITLE` | 助手 .env | 工作区显示名（默认「公司工作区」） |
+| `FMS_FILES_DIR` | 助手 .env（仅 Docker） | bind 到 `FMS_WORKSPACE_DIR` 的**宿主侧**文件夹（默认 `/srv/fms-assistant/files`） |
 | `ASSISTANT_URL` | **Rails 环境** | FMS 顶栏那颗机器人按钮打开的地址（新窗口）。必须是绝对地址（`https://…`），不是就忽略并告警 |
 | `ASSISTANT_OWNER_USERNAME` | **Rails 环境** | FMS 侧对 `FMS_OWNER_USERNAME` 的呼应：只有这个员工看得到那颗按钮。**两边必须逐字一致**（代理是精确比较），**留空则谁都看不到**——这台实例归谁，应用猜不出来，猜错就是发一个 403 给人 |
 
@@ -288,6 +301,33 @@ server {
 
 ---
 
+## 5.6 对话内生成办公文档（Excel / Word / PPT）
+
+部署包已带 **dsh-univer-office**（DreamNum 官方，Univer 插件，声明在 profile
+package.json、pnpm 冻结安装）。agent 可以把**任何 MCP 查询返回的 JSON** 现场做
+成文档交付，全程 agent 端、通用：
+
+- 员工说「把刚才的库存结果导出成 Excel / 做成表格」→ agent 用 `univer_*`
+  工具把工具返回的数据原样写入隔离 `.univer` 草稿的 Sheet/Doc/Slide，布局
+  检查后 **导出 .xlsx / .docx / .pptx**，成品出现在对话里可直接下载。
+- **产出文件落盘**：`FMS_WORKSPACE_DIR`。员工本机形态 = `~/.fms-assistant/workspace`
+  （在 fms-assistant 安装目录里，install.sh 已建）；服务器 Docker 形态 =
+  `<安装目录>/files`（已 bind，重建不丢）。
+- **只读姿态的边界**：这是 `fms-employee` 唯一的口子——agent 仍然
+  **无 shell / 无通用文件工具 / 无子代理/web**，只会往工作区目录写它自己
+  生成的办公文档；数据仍只走 MCP、按员工 Ability 过滤。
+
+**已知边界（先验收再上线）**：
+
+- **没有 PDF 导出**——该插件只导出 .xlsx/.csv/.tsv/.docx/.pptx；PDF 只有打印
+  路径（需本机 Chrome/Chromium）。要 PDF 得另接一层，本版本不做。
+- **需要实测**：① `univer_*` 工具对 `fms-employee` agent 全部可见（host 平面
+  注册，`--dump-config` 已确认插件入树；会话内 tools 清单待跑起来确认）；
+  ② 对话里产出的文件行能否直接下载（插件的 gateway/viewer 默认 9080+ 端口，
+  仅本机回环——导出/下载是主交付，预览卡片若不可达不影响文件本身，需要再加）。
+
+---
+
 ## 6. 上线验证 checklist
 
 - [ ] 无 cookie 访问助手 → 302 到登录页（同源）
@@ -302,6 +342,9 @@ server {
 - [ ] 对话里点「📎 上传文档」传一个 txt/csv → 自动发出「请处理文档 #id」，agent 能复述内容
 - [ ] 传一个 15MB 文件 → 客户端提示超限，不上传
 - [ ] （可选）传图片 → 有 tesseract 则能读文字，无则 status=error 且 agent 说明原因
+- [ ] **办公文档**：问 agent「把库存结果导出成 Excel」→ 对话出现可下载的 .xlsx，打开内容与工具返回一致
+- [ ] **落盘位置**：`FMS_WORKSPACE_DIR`（员工本机 = `~/.fms-assistant/workspace`；Docker = `<安装目录>/files`）出现产出文件，Docker 重建不丢
+- [ ] 确认 agent 仍**没有** shell/子代理/web（工具清单无 `tool-bash` 等）；数据仍只走 MCP
 
 ---
 
@@ -311,7 +354,7 @@ server {
 - **吊销员工**：员工在 FMS Settings 里 revoke token → 该实例立即 401。
 - **审计**：`mcp_query_logs` 表；建议加"异常大查询/非工作时间访问"告警。
 - **日志**：`docker compose logs -f` / `journalctl -u fms-assistant -f`。
-- **备份**：`assistant-data` volume（会话）+ Rails 正常备份（含 mcp_query_logs）。
+- **备份**：`assistant-data` volume（会话）+ **`FMS_WORKSPACE_DIR`（产出文档）** + Rails 正常备份（含 mcp_query_logs）。
 
 ---
 
@@ -327,3 +370,5 @@ server {
 | 应用页面全空 | RLS 弄瞎了应用账号 | 检查 §2.2 |
 | 助手在线但调用报错 | 生产机无法出网到 LLM API | 检查网络/防火墙 |
 | 对话打不开，Console 全是 `/api/*` 403 | harness /api 信任栅栏不认代理前的公共源 | `--trusted-host` 配 `FMS_TRUSTED_HOST`（见 §5） |
+| agent 说做不了 Excel / 不出现 univer 工具 | 没装/没挂 dsh-univer-office | `dsh --profile assistant --dump-config` 应含 `dsh-univer-office`；重跑 install.sh 或 rebuild（§0.5）后强刷 |
+| 产出的文件下载不了或预览空白 | 插件的 gateway/viewer（9080+，仅回环）在代理后不可达 | 导出/下载是主交付，先确认文件行可下；需要预览再给 gateway 加反代/端口映射 |

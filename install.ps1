@@ -48,6 +48,18 @@ if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] npm install failed" -ForegroundCo
 Say "Installing to $BASE_DIR ..."
 New-Item -ItemType Directory -Force -Path $BASE_DIR | Out-Null
 Copy-Item -Recurse -Force deploy\harness (Join-Path $BASE_DIR "harness")
+
+# 3b. Install profile dependencies (dsh-univer-office office bundle), frozen
+#     from the lockfile. MUST run before copying custom-plugins (pnpm removes
+#     packages not in its graph).
+Say "Installing profile deps (dsh-univer-office) ..."
+if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+    npm install -g --no-audit --no-fund pnpm@11.24.0
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] pnpm install failed" -ForegroundColor Red; exit 1 }
+}
+Push-Location (Join-Path $BASE_DIR "harness\profiles\assistant")
+try { pnpm install --frozen-lockfile } finally { Pop-Location }
+
 New-Item -ItemType Directory -Force -Path (Join-Path $BASE_DIR "harness\profiles\assistant\node_modules") | Out-Null
 Copy-Item -Recurse -Force custom-plugins\* (Join-Path $BASE_DIR "harness\profiles\assistant\node_modules\")
 New-Item -ItemType Directory -Force -Path (Join-Path $BASE_DIR "deploy"), (Join-Path $BASE_DIR "workspace") | Out-Null

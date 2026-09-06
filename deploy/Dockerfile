@@ -25,6 +25,17 @@ COPY harness/ ./harness/
 COPY auth-proxy.js ./deploy/auth-proxy.js
 COPY custom-plugins/ ./node_modules/
 
+# dsh-univer-office (Univer office bundle) — declared in the assistant profile
+# package.json and materialized here with pnpm against the frozen lockfile.
+# It gives the fms-employee agent generic Sheet/Doc/Slide authoring and
+# .xlsx/.docx/.pptx export from any data gathered over MCP (no PDF export in
+# this plugin — print-to-PDF only). The profile's pnpm-workspace.yaml keeps its
+# node_modules free of @deepseek-ai/dsh-* peer copies: peers resolve from the
+# dsh install at runtime, like every other out-of-tree plugin in this image.
+RUN npm install -g --no-audit --no-fund pnpm@11.24.0 \
+ && cd harness/profiles/assistant \
+ && pnpm install --frozen-lockfile
+
 ENV DSH_HOME=/app/harness \
     DSH_PERMISSION_MODE=read-only
 
