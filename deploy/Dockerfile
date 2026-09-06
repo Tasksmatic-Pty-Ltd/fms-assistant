@@ -41,7 +41,8 @@ COPY custom-plugins/ ./node_modules/
 # dsh install at runtime, like every other out-of-tree plugin in this image.
 RUN npm install -g --no-audit --no-fund pnpm@11.24.0 \
  && cd harness/profiles/assistant \
- && pnpm install --frozen-lockfile
+ && pnpm install --frozen-lockfile \
+ && rm -rf node_modules/@deepseek-ai
 
 ENV DSH_HOME=/app/harness \
     DSH_PERMISSION_MODE=read-only

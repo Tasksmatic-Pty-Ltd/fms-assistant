@@ -36,6 +36,17 @@ say "安装 profile 依赖（dsh-univer-office 办公插件）..."
 command -v pnpm >/dev/null 2>&1 || npm install -g --no-audit --no-fund pnpm@11.24.0
 ( cd "$BASE_DIR/harness/profiles/assistant" && pnpm install --frozen-lockfile )
 
+# 3c. The profile node_modules may carry stale @deepseek-ai/dsh-* PEER copies
+#     (dsh-univer-office peerDependencies, e.g. @deepseek-ai/dsh-host-webserver
+#     @0.1.0-rc.8). Those MUST resolve from the HOST dsh install at runtime, but
+#     a copied/pre-existing node_modules keeps a vendored copy (pnpm
+#     --frozen-lockfile does not prune extraneous). The vendored copy shadows
+#     the host version, whose dsh-host-webserver lacks renderIndex, so the web
+#     UI "/" crashes with "ctx.webServer.renderIndex is not a function" (HTTP
+#     400). Remove the vendored @deepseek-ai so the loader binds the host dep
+#     graph - the same reason pnpm-workspace.yaml sets autoInstallPeers: false.
+rm -rf "$BASE_DIR/harness/profiles/assistant/node_modules/@deepseek-ai"
+
 mkdir -p "$BASE_DIR/harness/profiles/assistant/node_modules"
 # dsh-files（vendored @0.4.1）的运行时依赖先装：npm 会裁剪多余包，若在拷贝
 # 插件之后再跑会把已拷进去的插件删掉。版本与 vendored 包在宿主 0.1.1-rc.2

@@ -80,6 +80,21 @@ try {
     Pop-Location
 }
 
+# 3c. The profile node_modules may carry stale @deepseek-ai/dsh-* PEER copies
+#     (dsh-univer-office peerDependencies, e.g. @deepseek-ai/dsh-host-webserver
+#     @0.1.0-rc.8). Those MUST resolve from the HOST dsh install at runtime, but
+#     a copied/pre-existing node_modules keeps a vendored copy (pnpm
+#     --frozen-lockfile does not prune extraneous). That vendored copy shadows
+#     the host version, whose dsh-host-webserver lacks renderIndex, so the web
+#     UI "/" crashes with "ctx.webServer.renderIndex is not a function" (HTTP
+#     400). Remove the vendored @deepseek-ai so the loader binds the host dep
+#     graph - the same reason pnpm-workspace.yaml sets autoInstallPeers: false.
+$vendoredDsai = Join-Path $BASE_DIR "harness\profiles\assistant\node_modules\@deepseek-ai"
+if (Test-Path $vendoredDsai) {
+    Remove-Item -Recurse -Force $vendoredDsai -ErrorAction SilentlyContinue
+    Say "Removed vendored @deepseek-ai peer copies from profile node_modules"
+}
+
 New-Item -ItemType Directory -Force -Path (Join-Path $BASE_DIR "harness\profiles\assistant\node_modules") | Out-Null
 # dsh-files (vendored @0.4.1) runtime deps FIRST: npm prunes extraneous
 # packages, so installing after the plugin copy below would delete the copied
