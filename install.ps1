@@ -54,11 +54,21 @@ Copy-Item -Recurse -Force deploy\harness (Join-Path $BASE_DIR "harness")
 #     packages not in its graph).
 Say "Installing profile deps (dsh-univer-office) ..."
 if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+    Say "Installing pnpm@11.24.0 ..."
     npm install -g --no-audit --no-fund pnpm@11.24.0
     if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] pnpm install failed" -ForegroundColor Red; exit 1 }
+    if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+        Write-Host "[ERROR] pnpm not found after install - is the npm global bin on PATH? Reopen the terminal and re-run." -ForegroundColor Red
+        exit 1
+    }
 }
 Push-Location (Join-Path $BASE_DIR "harness\profiles\assistant")
-try { pnpm install --frozen-lockfile } finally { Pop-Location }
+try {
+    pnpm install --frozen-lockfile
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] pnpm install (profile deps) failed" -ForegroundColor Red; exit 1 }
+} finally {
+    Pop-Location
+}
 
 New-Item -ItemType Directory -Force -Path (Join-Path $BASE_DIR "harness\profiles\assistant\node_modules") | Out-Null
 # dsh-files (vendored @0.4.1) runtime deps FIRST: npm prunes extraneous
