@@ -30,6 +30,15 @@ say "安装到 $BASE_DIR ..."
 mkdir -p "$BASE_DIR"
 cp -r deploy/harness "$BASE_DIR/"
 mkdir -p "$BASE_DIR/harness/profiles/assistant/node_modules"
+# dsh-files（vendored @0.4.1）的运行时依赖先装：npm 会裁剪多余包，若在拷贝
+# 插件之后再跑会把已拷进去的插件删掉。版本与 vendored 包在宿主 0.1.1-rc.2
+# 上验证过（mammoth / pdfjs-dist / read-excel-file，纯 JS，无原生模块）。
+say "安装 dsh-files 运行时依赖（mammoth / pdfjs-dist / read-excel-file）..."
+(
+  cd "$BASE_DIR/harness/profiles/assistant/node_modules"
+  npm install --omit=dev --no-audit --no-fund --no-save --no-package-lock \
+    mammoth@1.12.2 pdfjs-dist@4.10.38 read-excel-file@5.8.8
+)
 cp -r custom-plugins/* "$BASE_DIR/harness/profiles/assistant/node_modules/"
 mkdir -p "$BASE_DIR/deploy" "$BASE_DIR/workspace"
 cp deploy/auth-proxy.js "$BASE_DIR/deploy/"

@@ -49,6 +49,19 @@ Say "Installing to $BASE_DIR ..."
 New-Item -ItemType Directory -Force -Path $BASE_DIR | Out-Null
 Copy-Item -Recurse -Force deploy\harness (Join-Path $BASE_DIR "harness")
 New-Item -ItemType Directory -Force -Path (Join-Path $BASE_DIR "harness\profiles\assistant\node_modules") | Out-Null
+# dsh-files (vendored @0.4.1) runtime deps FIRST: npm prunes extraneous
+# packages, so installing after the plugin copy below would delete the copied
+# plugins. Versions verified against the vendored package on host 0.1.1-rc.2
+# (mammoth / pdfjs-dist / read-excel-file: pure JS, no native modules).
+Say "Installing dsh-files runtime deps (mammoth / pdfjs-dist / read-excel-file) ..."
+Push-Location (Join-Path $BASE_DIR "harness\profiles\assistant\node_modules")
+try {
+    npm install --omit=dev --no-audit --no-fund --no-save --no-package-lock `
+        mammoth@1.12.2 pdfjs-dist@4.10.38 read-excel-file@5.8.8
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] npm install (dsh-files deps) failed" -ForegroundColor Red; exit 1 }
+} finally {
+    Pop-Location
+}
 Copy-Item -Recurse -Force custom-plugins\* (Join-Path $BASE_DIR "harness\profiles\assistant\node_modules\")
 New-Item -ItemType Directory -Force -Path (Join-Path $BASE_DIR "deploy"), (Join-Path $BASE_DIR "workspace") | Out-Null
 Copy-Item -Force deploy\auth-proxy.js (Join-Path $BASE_DIR "deploy\auth-proxy.js")

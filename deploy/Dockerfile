@@ -15,12 +15,19 @@ WORKDIR /app
 
 # Pin the framework version — upgrade deliberately, verify against the current
 # harness semantics first.
-RUN npm install --no-audit --no-fund @deepseek-ai/dsh@0.1.1-rc.2
+# dsh-files (vendored at custom-plugins/dsh-files, v0.4.1) pulls mammoth /
+# pdfjs-dist / read-excel-file at runtime — pure JS, pinned to the versions
+# verified against this dsh pin. They land in /app/node_modules, which the
+# profile's module up-walk reaches; COPY custom-plugins/ below adds dsh-files
+# itself. (npm runs BEFORE that COPY on purpose: npm prunes extraneous
+# packages and would delete copied plugins installed earlier.)
+RUN npm install --no-audit --no-fund @deepseek-ai/dsh@0.1.1-rc.2 mammoth@1.12.2 pdfjs-dist@4.10.38 read-excel-file@5.8.8
 
 # Harness home (profile + hardened fms-employee preset), the auth proxy, and
-# the custom plugins (CITo brand UI + workspace pin). The plugins are copied
-# into /app/node_modules so BOTH the loader (resolves from the profile dir via
-# the up-walk) and the client-modules registry (dsh.client scan) can find them.
+# the custom plugins (CITO brand UI + workspace pin + vendored dsh-files). The
+# plugins are copied into /app/node_modules so BOTH the loader (resolves from
+# the profile dir via the up-walk) and the client-modules registry (dsh.client
+# scan) can find them.
 COPY harness/ ./harness/
 COPY auth-proxy.js ./deploy/auth-proxy.js
 COPY custom-plugins/ ./node_modules/

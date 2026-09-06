@@ -186,32 +186,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // The composer's "文档" upload — /api/assistant/* — goes to Rails, not the
-  // harness: the browser's FMS session cookie rides along and Rails resolves
-  // the employee from it (the session check above already gated on it).
-  if (pathname.startsWith('/api/assistant/')) {
-    // The upload endpoint accepts the FMS session cookie (the login gate
-    // already proved it valid), so a cross-site form POST would carry the
-    // victim's cookie straight through. The composer upload is same-origin
-    // with this proxy; refuse any Origin that is not this host. NEVER let an
-    // unparseable Origin (e.g. "null" from an opaque origin, or a scheme-less
-    // value from a script) crash the proxy — treat it as a mismatch → 403,
-    // and let a curl/API client with no Origin through (it still needs a
-    // valid session cookie).
-    const originHeader = req.headers.origin;
-    if (originHeader) {
-      let originHost = null;
-      try { originHost = new URL(originHeader).host; } catch { /* unparseable */ }
-      if (!originHost || originHost !== req.headers.host) {
-        res.writeHead(403, { 'Content-Type': 'text/plain' });
-        res.end('cross-origin upload refused');
-        return;
-      }
-    }
-    proxyTo(fms, req, res, req.url);
-    return;
-  }
-
+  // Everything else (harness UI, /api RPCs incl. the dsh-files upload surface
+  // /api/upload and /api/workspace-files) goes to the harness. The composer
+  // uploads are same-origin with this proxy and ride the already-gated FMS
+  // session. (The Rails document pipeline — /api/assistant/v1/documents —
+  // was retired with the fms-doc-attach plugin; there is no Rails API route
+  // through this proxy anymore.)
   proxyTo(target, req, res, req.url);
 });
 

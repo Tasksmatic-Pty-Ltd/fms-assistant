@@ -2,9 +2,9 @@
 
 **仓库：** https://github.com/Tasksmatic-Pty-Ltd/fms-assistant.git（私有，需 GitHub 账号有只读权限）
 
-基于 DeepSeek Harness 的**只读员工助手**客户端包：登录门代理 + harness profile（锁定 fms-employee preset）+ 自定义插件（CITO 品牌 / 工作区固定 / 文档上传按钮）。数据查询全部经 MCP 走**中央 FMS（tm-fms）**的 `POST /mcp`——权限复用 FMS 账号体系（CanCanCan）、RLS 行级隔离、`mcp_query_logs` 审计。
+基于 DeepSeek Harness 的**只读员工助手**客户端包：登录门代理 + harness profile（锁定 fms-employee preset）+ 自定义插件（CITO 品牌 / 工作区固定 / dsh-files 本地文件上传与阅读）。数据查询全部经 MCP 走**中央 FMS（tm-fms）**的 `POST /mcp`——权限复用 FMS 账号体系（CanCanCan）、RLS 行级隔离、`mcp_query_logs` 审计。
 
-> 本仓库 = tm-fms 里 `assistant/` 目录的独立发布形态（源在 tm-fms，由同步机制保持一致）。Rails 侧的 MCP 端点 / RLS / 只读角色 / 文档提取都在 tm-fms 里，**员工机器不需要任何 Rails 代码**。
+> 本仓库 = tm-fms 里 `assistant/` 目录的独立发布形态（源在 tm-fms，由同步机制保持一致）。Rails 侧的 MCP 端点 / RLS / 只读角色都在 tm-fms 里，**员工机器不需要任何 Rails 代码**。文档处理也已改为**本地**：员工在对话里直接上传文件（📎/📁/拖拽/@，≤10MiB），由 dsh-files 在本机解析文本、agent 用 `read_document` 读取——文件不再上传 Rails（原 fms-doc-attach → Rails 提取 → `document.read` MCP 管线已退役）。
 
 ## 两种部署形态（同一份代码）
 
@@ -139,8 +139,8 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3082/   # 期望 302�
 
 ## 限制（员工只能做 FMS 相关工作）
 
-- **preset 锁定**：无 shell / 无文件工具 / 无子代理 / 无 web——agent 只能调 MCP 工具
-- **sandbox 只读 + 工作区固定**（Linux landlock / Windows ACL）
+- **preset 锁定**：无 shell / 无子代理 / 无 web / 无通用文件工具——agent 只能调 MCP 工具，外加 dsh-files 的 `read_document`（只读解析对话里上传的附件，见 `custom-plugins/dsh-files/VENDOR.md`）
+- **sandbox 只读 + 工作区固定**（Linux landlock / Windows ACL）；上传文档只落在本机/实例工作区 `.dsh-filess/`（TTL 7 天清扫），**不离开实例**
 - **身份门**：实例绑定 `FMS_OWNER_USERNAME`，其他 FMS 用户 403（fail-closed）
 - **服务端不可绕过的三层**：token 按员工 Ability 过滤、RLS + `mcp_readonly` 只读角色、`mcp_query_logs` 审计——员工在本机改配置也拿不到超出自己 token 的数据
 
@@ -155,13 +155,13 @@ deploy/
   docker-compose.assistant.yml   服务器集中形态
   Dockerfile
   .env.example
-custom-plugins/                   fms-assistant-custom-ui（品牌）/ fms-workspace-pin / fms-doc-attach（文档上传按钮）
+custom-plugins/                   fms-assistant-custom-ui（品牌）/ fms-workspace-pin / dsh-files（vendored v0.4.1：上传 + read_document）
 install.sh / install.ps1          一键安装（本机形态）
 DEPLOY.md                         完整部署文档
 ```
 
 ## 维护
 
-- **版本锁定**：`@deepseek-ai/dsh@0.1.1-rc.2` 锁在 install.sh/install.ps1/Dockerfile，升级改一处
+- **版本锁定**：`@deepseek-ai/dsh@0.1.1-rc.2` 与 vendored `dsh-files@0.4.1` 配套锁定（0.4.1 是最后支持宿主 0.1.1-rc.2 的版本；dsh-files 0.5.x 需宿主 ≥ 0.1.3 原生上传管线）。升级 dsh 时按 `custom-plugins/dsh-files/VENDOR.md` 一起评估 dsh-files
 - **与 tm-fms 同步**：本仓库由 tm-fms `assistant/` 同步而来（CI/脚本），两边不手工维护两份
 - **吊销员工**：员工在 FMS Settings revoke token → 实例立即 401
