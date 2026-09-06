@@ -44,10 +44,20 @@ npm install -g "@deepseek-ai/dsh@$DSH_VERSION" "--allow-scripts=$allowScripts"
 if ($LASTEXITCODE -ne 0) { npm install -g "@deepseek-ai/dsh@$DSH_VERSION" }
 if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] npm install failed" -ForegroundColor Red; exit 1 }
 
-# 3. Copy the deploy package
+# 3. Copy the deploy package. PowerShell's Copy-Item -Recurse of a directory
+#    into an EXISTING destination nests it (harness\harness\...) instead of
+#    refreshing the files, so re-running install left the ACTIVE profile stale
+#    (e.g. one still referencing the retired fms-doc-attach plugin -> the
+#    harness crashed at boot with ERR_MODULE_NOT_FOUND). Rename the old harness
+#    aside first so a re-run installs the current profile; the previous tree
+#    survives as harness.prev (delete it once the new install is verified).
 Say "Installing to $BASE_DIR ..."
 New-Item -ItemType Directory -Force -Path $BASE_DIR | Out-Null
-Copy-Item -Recurse -Force deploy\harness (Join-Path $BASE_DIR "harness")
+$harnessDir = Join-Path $BASE_DIR "harness"
+$prevDir    = Join-Path $BASE_DIR "harness.prev"
+if (Test-Path $prevDir) { Remove-Item -Recurse -Force $prevDir -ErrorAction SilentlyContinue }
+if (Test-Path $harnessDir) { Rename-Item $harnessDir $prevDir }
+Copy-Item -Recurse -Force deploy\harness $harnessDir
 
 # 3b. Install profile dependencies (dsh-univer-office office bundle), frozen
 #     from the lockfile. MUST run before copying custom-plugins (pnpm removes

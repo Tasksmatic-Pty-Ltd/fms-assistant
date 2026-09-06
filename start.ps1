@@ -104,15 +104,24 @@ foreach ($proc in @(@{ Name = "harness"; P = $harness }, @{ Name = "proxy"; P = 
     }
 }
 
-# Self-check: the login gate should answer (302 without a session). Retry up
-# to ~30s - Windows cold-start of dsh can take a while.
+# Self-check: the login gate should answer (302 without a session; 403 when
+# the session check reaches FMS). Retry up to ~30s - Windows cold-start of dsh
+# can take a while. Uses HttpWebRequest with Proxy = $null on purpose:
+# Invoke-WebRequest honors the WinINET/IE proxy, and a corporate PAC that does
+# not bypass 127.0.0.1 turns every check into a phantom "HTTP 0" even while the
+# proxy is listening and answers browsers fine.
 Say "Self-check http://127.0.0.1:$PROXY_PORT/ ..."
 $code = 0
 for ($i = 0; $i -lt 15; $i++) {
     Start-Sleep -Seconds 2
     try {
-        $r = Invoke-WebRequest -Uri "http://127.0.0.1:$PROXY_PORT/" -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
-        $code = [int]$r.StatusCode
+        $req = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$PROXY_PORT/")
+        $req.Proxy = $null
+        $req.AllowAutoRedirect = $false
+        $req.Timeout = 5000
+        $resp = $req.GetResponse()
+        $code = [int]$resp.StatusCode
+        $resp.Close()
     } catch {
         if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
     }
